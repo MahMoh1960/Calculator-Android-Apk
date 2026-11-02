@@ -8,10 +8,6 @@ on:
 permissions:
   contents: write
 
-env:
-  APP_NAME: "Calculatrice"
-  APP_ID: "com.mahmoh.calculatrice"
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,43 +23,27 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Préparer la page web
-        run: |
-          set -e
-          INDEX=$(find . -maxdepth 3 -name index.html \
-            -not -path "./node_modules/*" -not -path "./.git/*" -not -path "./.github/*" \
-            | head -n 1)
-          if [ -z "$INDEX" ]; then
-            echo "Aucun index.html trouvé dans ce dépôt."
-            exit 1
-          fi
-          WEBDIR=$(dirname "$INDEX")
-          echo "Page web trouvée dans : $WEBDIR"
-          mkdir -p "$RUNNER_TEMP/app/www"
-          rsync -a --exclude ".git" --exclude ".github" --exclude "node_modules" \
-            "$WEBDIR"/ "$RUNNER_TEMP/app/www/"
-          ls -l "$RUNNER_TEMP/app/www"
+      - name: Installer les dépendances
+        run: npm install --legacy-peer-deps
 
-      - name: Créer le projet Android (Capacitor)
-        working-directory: ${{ runner.temp }}/app
+      - name: Définir le nom du paquet Android
         run: |
-          set -e
-          npm init -y
-          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
-          npx cap init "$APP_NAME" "$APP_ID" --web-dir www
-          npx cap add android
-          npx cap sync android
+          jq '.expo.android.package = "com.mahmoh.calculatrice"' app.json > app.tmp.json
+          mv app.tmp.json app.json
 
-      - name: Compiler l'APK (debug)
-        working-directory: ${{ runner.temp }}/app/android
+      - name: Générer le projet Android (Expo prebuild)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Compiler l'APK
+        working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease --stacktrace
 
       - name: Rassembler l'APK
         run: |
           mkdir -p out
-          cp "$RUNNER_TEMP/app/android/app/build/outputs/apk/debug/app-debug.apk" out/calculatrice.apk
+          cp android/app/build/outputs/apk/release/*.apk out/calculatrice.apk
           ls -l out
 
       - uses: actions/upload-artifact@v4
@@ -71,7 +51,7 @@ jobs:
           name: apk
           path: out/calculatrice.apk
 
-      - name: Publier dans Releases (téléchargement direct)
+      - name: Publier dans Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-${{ github.run_number }}
